@@ -32,7 +32,7 @@ variable "backend2_host" {
 
 variable "backend_tls" {
   type    = bool
-  default = false
+  default = true
 }
 
 variable "template_tags" {

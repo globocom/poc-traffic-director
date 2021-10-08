@@ -88,11 +88,18 @@ resource "google_compute_backend_service" "backend1-backend-internal" {
 }
 
 resource "google_compute_backend_service" "backend2-backend-internal-tls" {
+  provider = google-beta
+
   name                  = "backend2-backend-internal-tls"
   project               = var.project
   load_balancing_scheme = "INTERNAL_SELF_MANAGED"
   health_checks         = [google_compute_health_check.td-tcp-health-check-443.id]
   protocol              = "HTTPS"
+
+  security_settings {
+    client_tls_policy = "projects/${var.project}/locations/global/clientTlsPolicies/tls_policy_backend2"
+    subject_alt_names = []
+  }
 
   backend {
     group                 = data.google_compute_network_endpoint_group.backend2-private-neg-tls.id
@@ -100,14 +107,23 @@ resource "google_compute_backend_service" "backend2-backend-internal-tls" {
     capacity_scaler       = 1.0
     max_rate_per_endpoint = 5000
   }
+
+  depends_on = [null_resource.tls-policy-backends]
 }
 
 resource "google_compute_backend_service" "backend1-backend-internal-tls" {
+  provider = google-beta
+
   name                  = "backend1-backend-internal-tls"
   project               = var.project
   load_balancing_scheme = "INTERNAL_SELF_MANAGED"
   health_checks         = [google_compute_health_check.td-tcp-health-check-443.id]
   protocol              = "HTTPS"
+
+  security_settings {
+    client_tls_policy = "projects/${var.project}/locations/global/clientTlsPolicies/tls_policy_backend1"
+    subject_alt_names = []
+  }
 
   backend {
     group                 = data.google_compute_network_endpoint_group.backend1-private-neg-tls.id
@@ -115,6 +131,8 @@ resource "google_compute_backend_service" "backend1-backend-internal-tls" {
     capacity_scaler       = 1.0
     max_rate_per_endpoint = 5000
   }
+
+  depends_on = [null_resource.tls-policy-backends]
 }
 
 resource "google_compute_url_map" "td-urlmap" {
@@ -173,3 +191,29 @@ resource "google_compute_health_check" "td-tcp-health-check-443" {
   }
 }
 
+resource "local_file" "tls-policy-backend1" {
+  content  = <<EOT
+name: "tls_policy_backend1"
+sni: "${var.backend1_host}"
+EOT
+  filename = "${path.root}/.terraform/tmp/policy-backend1.yaml"
+}
+
+resource "local_file" "tls-policy-backend2" {
+  content  = <<EOT
+name: "tls_policy_backend2"
+sni: "${var.backend2_host}"
+EOT
+  filename = "${path.root}/.terraform/tmp/policy-backend2.yaml"
+}
+
+resource "null_resource" "tls-policy-backends" {
+  provisioner "local-exec" {
+    command = <<EOT
+gcloud beta network-security client-tls-policies import tls_policy_backend1 --location=global \
+  --source=${local_file.tls-policy-backend1.filename}
+gcloud beta network-security client-tls-policies import tls_policy_backend2 --location=global \
+  --source=${local_file.tls-policy-backend2.filename}
+EOT
+  }
+}
