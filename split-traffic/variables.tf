@@ -30,12 +30,22 @@ variable "backend2_host" {
   type = string
 }
 
-variable "backend_tls" {
-  type    = bool
-  default = true
-}
-
 variable "template_tags" {
   type    = list(string)
   default = []
+}
+
+variable "backend1_percent" {
+  type    = number
+  default = 80
+}
+
+variable "backend2_percent" {
+  type    = number
+  default = 20
+}
+
+variable "ssl_certificate_id" {
+  type    = string
+  default = ""
 }

@@ -84,6 +84,11 @@ resource "google_compute_region_instance_group_manager" "td-middle-proxy-instanc
     name = "td-port"
     port = google_compute_global_forwarding_rule.td-forwarding-rule.port_range
   }
+
+  named_port {
+    name = "td-port-insecure"
+    port = google_compute_global_forwarding_rule.td-forwarding-rule-insecure.port_range
+  }
 }
 
 resource "google_compute_region_autoscaler" "td-middle-proxy-instance-group" {

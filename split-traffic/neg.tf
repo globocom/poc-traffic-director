@@ -7,11 +7,6 @@ data "dns_a_record_set" "backend2" {
   host = var.backend2_host
 }
 
-locals {
-  backend1_service = var.backend_tls ? google_compute_backend_service.backend1-backend-internal-tls.id : google_compute_backend_service.backend1-backend-internal.id
-  backend2_service = var.backend_tls ? google_compute_backend_service.backend2-backend-internal-tls.id : google_compute_backend_service.backend2-backend-internal.id
-}
-
 resource "null_resource" "gcp_private_ip_negs" {
   provisioner "local-exec" {
     command = <<EOT
@@ -97,7 +92,7 @@ resource "google_compute_backend_service" "backend2-backend-internal-tls" {
   protocol              = "HTTPS"
 
   security_settings {
-    client_tls_policy = "projects/${var.project}/locations/global/clientTlsPolicies/tls_policy_backend2"
+    client_tls_policy = "projects/${var.project}/global/regions/tls_policy_backend2"
     subject_alt_names = []
   }
 
@@ -121,7 +116,7 @@ resource "google_compute_backend_service" "backend1-backend-internal-tls" {
   protocol              = "HTTPS"
 
   security_settings {
-    client_tls_policy = "projects/${var.project}/locations/global/clientTlsPolicies/tls_policy_backend1"
+    client_tls_policy = "projects/${var.project}/global/regions/tls_policy_backend1"
     subject_alt_names = []
   }
 
@@ -141,12 +136,12 @@ resource "google_compute_url_map" "td-urlmap" {
 
   default_route_action {
     weighted_backend_services {
-      backend_service = local.backend1_service
-      weight          = 80
+      backend_service = google_compute_backend_service.backend1-backend-internal-tls.id
+      weight          = var.backend1_percent
     }
     weighted_backend_services {
-      backend_service = local.backend2_service
-      weight          = 20
+      backend_service = google_compute_backend_service.backend2-backend-internal-tls.id
+      weight          = var.backend2_percent
     }
   }
 }
@@ -155,6 +150,29 @@ resource "google_compute_target_http_proxy" "td-http-proxy" {
   name       = "td-http-proxy"
   project    = var.project
   url_map    = google_compute_url_map.td-urlmap.id
+  proxy_bind = true
+}
+
+resource "google_compute_url_map" "td-urlmap-insecure" {
+  name    = "td-urlmap-insecure"
+  project = var.project
+
+  default_route_action {
+    weighted_backend_services {
+      backend_service = google_compute_backend_service.backend1-backend-internal.id
+      weight          = var.backend1_percent
+    }
+    weighted_backend_services {
+      backend_service = google_compute_backend_service.backend2-backend-internal.id
+      weight          = var.backend2_percent
+    }
+  }
+}
+
+resource "google_compute_target_http_proxy" "td-http-proxy-insecure" {
+  name       = "td-http-proxy-insecure"
+  project    = var.project
+  url_map    = google_compute_url_map.td-urlmap-insecure.id
   proxy_bind = true
 }
 
@@ -168,6 +186,18 @@ resource "google_compute_global_forwarding_rule" "td-forwarding-rule" {
   network               = var.network
   target                = google_compute_target_http_proxy.td-http-proxy.id
 }
+
+resource "google_compute_global_forwarding_rule" "td-forwarding-rule-insecure" {
+  name                  = "td-forwarding-rule-insecure"
+  project               = var.project
+  ip_protocol           = "TCP"
+  load_balancing_scheme = "INTERNAL_SELF_MANAGED"
+  port_range            = 8081
+  ip_address            = "0.0.0.0"
+  network               = var.network
+  target                = google_compute_target_http_proxy.td-http-proxy-insecure.id
+}
+
 
 resource "google_compute_health_check" "td-tcp-health-check-80" {
   name               = "td-tcp-health-check-80"
